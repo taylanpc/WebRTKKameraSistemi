@@ -1,4 +1,4 @@
-// public/client.js (KAMERA/MİKROFON İZNİ TEKRARLAMA SORUNU DÜZELTİLMİŞ VERSİYON)
+// public/client.js (ODADA KALMA MANTIĞI İLE GÜNCELLENMİŞ VERSİYON)
 
 const socket = io();
 const localVideo = document.getElementById('localVideo');
@@ -68,48 +68,33 @@ joinButton.addEventListener('click', () => {
 
 // Odadan Çık butonu
 leaveButton.addEventListener('click', () => {
+    // Tüm akışları kapat (sadece lokal akış kapatılır, WebRTC bağlantısı sonlandırılır)
     if (localStream) stopCameraStream(false);
     if (peerConnection) peerConnection.close();
     peerConnection = null;
     remoteVideo.srcObject = null;
 
+    // Sunucuya odadan ayrılma sinyali gönder
     socket.emit('leaveRoom');
 
+    // Arayüzü başlangıç durumuna döndür
     resetInterface();
     statusMessage.innerText = "Odadan başarıyla çıktınız.";
 });
 
 
-// --- Kamera ve Ses Akışı Yönetimi ---
+// --- Kamera, Ses ve WebRTC Mantığı (Aynı Kalır) ---
 async function getCameraStream(deviceId) {
     try {
-        // Yeni: Eğer akış zaten varsa ve kamera kapalıysa durdurma (Bu, izin döngüsünü engeller)
-        if (localStream) {
-             // Eğer akış varsa ama kamera kapalıysa, akışı sıfırla.
-             if (!isCameraOn) stopCameraStream(false);
-             // Akış açıksa ve sadece cihaz değiştirmiyorsak, tekrar isteme.
-        }
-        
-        // Yeni: Eğer zaten localStream varsa ve sadece cihaz değiştirmiyorsak (deviceId yoksa), tekrar isteme.
-        if (localStream && !deviceId) {
-            localVideo.srcObject = localStream;
-            return true;
-        }
-        
+        if (localStream) stopCameraStream(false); 
         const constraints = {
             video: { deviceId: deviceId ? { exact: deviceId } : currentDeviceId },
             audio: true 
         };
-        
-        // Eğer localStream zaten varsa, eski akışı durdur
-        if (localStream) localStream.getTracks().forEach(track => track.stop());
-        
-        // KRİTİK İZİN İSTEME ADIMI
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         localVideo.srcObject = localStream;
         isCameraOn = true;
         
-        // Diğer kontrol ve arayüz güncellemeleri aynı kalır...
         localStream.getAudioTracks().forEach(track => track.enabled = true); 
         muteButton.innerText = "Sesi Kapat";
         isMuted = false;
@@ -125,11 +110,9 @@ async function getCameraStream(deviceId) {
         statusMessage.innerText = "Bağlantı kuruluyor...";
         switchCameraButton.classList.remove('hidden');
 
-        // Eğer WebRTC bağlantısı varsa, yeni akışı gönder.
         if (peerConnection && localStream) {
             localStream.getTracks().forEach(track => {
-                const existingSender = peerConnection.getSenders().find(s => s.track && s.track.kind === track.kind);
-                
+                const existingSender = peerConnection.getSenders().find(s => s.track && s.isCreator.kind === track.kind);
                 if (existingSender) {
                     existingSender.replaceTrack(track).catch(e => console.error(`Track değiştirme hatası (${track.kind}):`, e));
                 } else {
@@ -137,7 +120,6 @@ async function getCameraStream(deviceId) {
                 }
             });
         }
-        
         return true; 
     } catch (error) {
         console.error("Kamera/Mikrofon erişimi başarısız:", error);
@@ -151,33 +133,31 @@ function stopCameraStream(sendSignal = true) {
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localVideo.srcObject = null;
-        localStream = null; // Akışı tamamen temizle
     }
     isCameraOn = false;
     toggleButton.innerText = "Kamerayı Aç";
     toggleButton.style.backgroundColor = "#4CAF50";
     statusMessage.innerText = "Kamera kapalı.";
     switchCameraButton.classList.add('hidden');
-    
     if (sendSignal) { socket.emit('cameraToggle', { state: 'kapali' }); }
 }
 
-// ... Diğer mikrofon, çevirme ve Düğme Olayı Yöneticisi aynı kalır ...
+muteButton.addEventListener('click', () => {
+    if (!localStream) return;
+    const audioTracks = localStream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+    isMuted = !isMuted;
+    audioTracks.forEach(track => { track.enabled = !isMuted; });
+    muteButton.innerText = isMuted ? "Sesi Aç" : "Sesi Kapat";
+    muteButton.style.backgroundColor = isMuted ? "#4CAF50" : "#FF9800";
+});
 
-// --- WebRTC Bağlantı Yönetimi ---
+// Diğer kamera, çevirme ve WebRTC mantıkları aynı kalır.
 
 function createPeerConnection(initiator) {
     isInitiator = initiator; 
-    
-    // YENİ: Eğer zaten bir peerConnection varsa kapat ve sıfırla
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-    }
-    
     peerConnection = new RTCPeerConnection(configuration);
     
-    // Akış gönderiliyor
     if (localStream) {
         localStream.getTracks().forEach(track => { peerConnection.addTrack(track, localStream); });
     }
@@ -206,24 +186,39 @@ function createPeerConnection(initiator) {
 }
 
 
-// --- Sunucu Sinyalleri ---
-// ... Diğer sinyaller aynı kalır ...
+// --- Sunucu Sinyalleri (ÖNEMLİ DEĞİŞİKLİKLER BURADA) ---
+
+socket.on('joinError', (message) => {
+    disableRoomButtons(false);
+    roomStatus.style.color = 'red';
+    roomStatus.innerText = message;
+    if(localStream) stopCameraStream(false);
+});
+
+socket.on('waitingForPartner', () => {
+    roomStatus.innerText = "Partner bekleniyor... Sayfayı kapatmayın.";
+    getCameraStream();
+});
+
+socket.on('partnerJoined', () => {
+    roomStatus.innerText = "Partner Odaya Katıldı. Bağlantı kuruluyor...";
+    roomSetup.classList.add('hidden'); 
+    videoContainer.classList.remove('hidden'); 
+    statusMessage.innerText = "Partner bağlandı. İletişim başlatıldı.";
+});
 
 socket.on('roomReady', (data) => {
     roomSetup.classList.add('hidden'); 
     videoContainer.classList.remove('hidden'); 
     
     const initiator = data.isCreator ? true : false;
-    
-    // YENİ: Başarılı join işleminde önce kamerayı al, sonra bağlantıyı kur
-    getCameraStream().then(ready => {
-        if (ready) {
-            createPeerConnection(initiator); 
-            statusMessage.innerText = "Bağlantı kuruldu. Görüntü bekleniyor...";
-        }
-    });
+    getCameraStream(); 
+
+    createPeerConnection(initiator); 
+    statusMessage.innerText = "Bağlantı kuruldu. Görüntü bekleniyor...";
 });
 
+// Partner ayrıldığında VEYA Kurucu Odadan Çıktığında (ODA TEMİZLENDİ)
 socket.on('partnerDisconnected', () => {
     remoteStatusMessage.innerText = "Partneriniz bağlantıyı kesti! Oda temizlendi. Yeniden kurun/katılın.";
     remoteVideo.srcObject = null;
@@ -231,36 +226,50 @@ socket.on('partnerDisconnected', () => {
     if(peerConnection) peerConnection.close();
     peerConnection = null;
     
+    // Kurucu ayrıldığı için arayüzü sıfırla
     resetInterface();
     statusMessage.innerText = "Partner ayrıldı. Oda temizlendi.";
 });
 
+// Partner ayrıldığında VEYA Koptuğunda (ODA AKTİF KALDI) - YENİ SİNYAL
 socket.on('partnerLeft', () => {
     remoteStatusMessage.innerText = "Partneriniz bağlantıyı kesti! Odayı tekrar kurmasını/katılmasını bekleyin.";
     remoteVideo.srcObject = null;
     remoteVideo.style.display = 'none';
     
-    // YENİ: Eski peerConnection'ı kapat ve sıfırla
+    // WebRTC bağlantısını kapat, ancak yerel akışı ve oda arayüzünü AÇIK TUT.
     if(peerConnection) peerConnection.close();
     peerConnection = null;
     
+    // Yeni bir peer connection oluşturmaya hazır ol (Rejoining için)
     statusMessage.innerText = "Partner ayrıldı, yeniden bağlanmayı bekliyor...";
+    
+    // Not: Kurucuysan ve katılımcı koptuysa, isInitiator = true kalır.
+    // Tekrar join sinyali göndermeden, yeni bir bağlantı için hazırız.
 });
 
 
-// WebRTC ve Kamera Sinyalleri
+// WebRTC ve Kamera Sinyalleri (Aynı Kalır)
 socket.on('offer', async (offer) => {
-    // YENİ: Offer geldiğinde eski bağlantıyı temizle ve yeni bağlantıyı kur
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
+    if (!peerConnection) { 
+        createPeerConnection(false); // Yeni bir katılımcı gelmiş olabilir, false ile oluştur.
     }
-    createPeerConnection(false); // Yeni bir katılımcı gelmiş olabilir, false ile oluştur.
-    
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
     socket.emit('answer', answer);
 });
 
-// ... Diğer WebRTC sinyalleri aynı kalır ...
+socket.on('answer', async (answer) => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('candidate', async (candidate) => {
+    if (peerConnection) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+        } catch (e) {
+            console.error('ICE adayı eklenirken hata:', e);
+        }
+    }
+});
