@@ -1,4 +1,4 @@
-// public/client.js (ÖN BELLEK SORUNU İÇİN KÖKTEN ÇÖZÜM)
+// public/client.js (YATAY/DİKEY VE ÇIK-GİR SORUNU İÇİN SON DÜZELTME)
 
 const socket = io();
 const toggleButton = document.getElementById('toggleButton');
@@ -14,11 +14,11 @@ const createButton = document.getElementById('createButton');
 const roomNameInput = document.getElementById('roomName');
 const roomStatus = document.getElementById('roomStatus');
 
-// Kapsayıcı Elementler (HTML'deki yapıyı kontrol et!)
+// Kapsayıcı Elementler (index.html'deki localVideoWrapper ve remoteVideoWrapper)
 const localVideoWrapper = document.getElementById('localVideoWrapper');
 const remoteVideoWrapper = document.getElementById('remoteVideoWrapper');
 
-// Başlangıçta DOM'dan referansları al (recreateVideoElements bunu değiştirecek)
+// Başlangıçta DOM'dan referansları al
 let localVideo = document.getElementById('localVideo'); 
 let remoteVideo = document.getElementById('remoteVideo'); 
 
@@ -65,7 +65,6 @@ function recreateVideoElements() {
     
     // 3. Kapsayıcılara Ekleme
     localVideoWrapper.appendChild(localVideo);
-    // Remote status mesajı her zaman en altta kalsın
     remoteVideoWrapper.insertBefore(remoteVideo, remoteStatusMessage); 
 
     console.log("Video elementleri DOM'da yeniden oluşturuldu.");
@@ -148,7 +147,8 @@ async function getCameraStream(deviceId) {
     try {
         // Eğer akış açıksa ve cihaz değiştirmeyeceksek, videoyu sadece yerel olarak göster.
         if (localStream && isCameraOn && !deviceId) {
-            localVideo.srcObject = localStream;
+            localVideo.srcObject = null; // Eski referansı temizle
+            localVideo.srcObject = localStream; // Yeniden zorla bağla
             return true;
         }
         
@@ -160,9 +160,14 @@ async function getCameraStream(deviceId) {
             audio: true 
         };
         
-        // KRİTİK: Yeni localVideo elementine atamadan önce akışı al
+        // KRİTİK: Yeni akışı al
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // VİDEO YENİDEN BAĞLAMA ZORLAMASI
+        localVideo.srcObject = null; 
         localVideo.srcObject = localStream;
+        // ----------------------------------------
+        
         isCameraOn = true;
         
         localStream.getAudioTracks().forEach(track => track.enabled = !isMuted); 
@@ -178,16 +183,19 @@ async function getCameraStream(deviceId) {
         statusMessage.innerText = "Bağlantı kuruluyor...";
         switchCameraButton.classList.remove('hidden');
 
-        // Akış alındığında, PeerConnection varsa akışları ekle/değiştir
+        // KRİTİK DÜZELTME: Akım kesilmesini engellemek için, eski sender'ları kaldırıp akışı baştan ekle
         if (peerConnection && localStream) {
-            localStream.getTracks().forEach(track => {
-                const existingSender = peerConnection.getSenders().find(s => s.track && s.track.kind === track.kind);
-                
-                if (existingSender) {
-                    existingSender.replaceTrack(track).catch(e => console.error(`Track değiştirme hatası (${track.kind}):`, e));
-                } else {
-                    peerConnection.addTrack(track, localStream);
+             // Tüm göndericileri temizle
+            peerConnection.getSenders().forEach(sender => {
+                if (sender.track) {
+                    peerConnection.removeTrack(sender);
                 }
+            });
+
+            // Akışları baştan ekle (garantili yeniden ekleme)
+            localStream.getTracks().forEach(track => { 
+                peerConnection.addTrack(track, localStream); 
+                console.log(`[STREAM EKLEME] Yeni ${track.kind} track'i eklendi.`);
             });
         }
         
@@ -219,7 +227,7 @@ function stopCameraStream(sendSignal = true) {
 }
 
 
-// --- Mikrofon Kontrolü, Kamera Çevirme ve Düğme Olayları (DEĞİŞMEDİ) ---
+// --- Mikrofon Kontrolü, Kamera Çevirme ve Düğme Olayları ---
 
 muteButton.addEventListener('click', () => {
     if (!localStream) return;
@@ -285,6 +293,7 @@ function createPeerConnection(initiator) {
     // KRİTİK: PeerConnection kurulur kurulmaz, localStream'deki track'leri ekle
     if (localStream) {
         localStream.getTracks().forEach(track => { peerConnection.addTrack(track, localStream); });
+        console.log("[PEER OLUŞTURMA] Mevcut akışlar PeerConnection'a eklendi.");
     }
 
     // KRİTİK DÜZELTME: Akışı video etiketine bağlarken play() ile oynatmayı zorla
@@ -294,6 +303,7 @@ function createPeerConnection(initiator) {
         if (remoteVideo.srcObject !== remoteStream) {
             
             // 1. Akışı bağla (SRC'yi ayarla)
+            remoteVideo.srcObject = null; // Eski referansı temizle
             remoteVideo.srcObject = remoteStream;
             
             // 2. Akışın yüklenmesini bekle ve sonra oynatmayı zorla
@@ -327,7 +337,7 @@ function createPeerConnection(initiator) {
 }
 
 
-// --- Sunucu Sinyalleri (DEĞİŞMEDİ) ---
+// --- Sunucu Sinyalleri ---
 
 socket.on('joinError', (message) => {
     disableRoomButtons(false);
