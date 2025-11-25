@@ -1,23 +1,54 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Uzaktan Kamera İzleme Sistemi</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>WebRTC Kamera Sistemi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 800px; margin: auto; }
+        video { width: 100%; max-width: 400px; height: auto; margin: 10px; border: 3px solid; display: block; }
+        #localVideo { border-color: #4CAF50; /* Yeşil */ }
+        #remoteVideo { border-color: #f44336; /* Kırmızı */ }
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
+        #toggleButton { background-color: #4CAF50; }
+        #switchCameraButton { background-color: #2196F3; display: none; /* Başlangıçta gizli */ }
+        #roomSetup { margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #fff; }
+        #statusContainer { margin-top: 15px; }
+        .hidden { display: none; }
+    </style>
 </head>
 <body>
-    <h1>Cihaz 1: Kamera Akışı (Gönderici)</h1>
-    <div>
-        <button id="toggleButton" style="padding: 10px; background-color: #f44336; color: white; border: none; cursor: pointer;">Kamerayı Kapat</button>
-        <p id="statusMessage" style="color: blue; font-weight: bold;"></p>
+    <div class="container">
+        <h1>WebRTC Kamera İzleme Sistemi</h1>
+
+        <div id="roomSetup">
+            <h2>Odaya Katıl</h2>
+            <input type="text" id="roomName" placeholder="Oda Adı (Örn: necati)" required>
+            <button id="joinButton">Odaya Bağlan</button>
+            <p id="roomStatus" style="color: blue; font-weight: bold; margin-top: 10px;"></p>
+        </div>
+
+        <div id="videoContainer" class="hidden">
+            <div id="statusContainer">
+                <p id="statusMessage" style="color: orange; font-weight: bold;">Bağlantı bekleniyor...</p>
+                <button id="toggleButton">Kamerayı Aç</button>
+                <button id="switchCameraButton" class="hidden">Kamerayı Çevir</button>
+            </div>
+
+            <hr>
+
+            <h2>Cihaz 1: Kamera Akışı (Gönderici)</h2>
+            <video id="localVideo" autoplay muted></video>
+
+            <hr>
+
+            <h2>Cihaz 2: İzleyici Akışı (Alıcı)</h2>
+            <video id="remoteVideo" autoplay></video>
+            <p id="remoteStatusMessage" style="color: red; font-weight: bold;"></p>
+        </div>
+
     </div>
     
-    <video id="localVideo" autoplay muted style="width: 90vw; max-width: 400px; border: 2px solid green;"></video>
-    
-    <h2>Cihaz 2: İzleyici Akışı (Alıcı)</h2>
-    <p id="remoteStatusMessage" style="color: red; font-weight: bold;"></p> 
-    <video id="remoteVideo" autoplay style="width: 90vw; max-width: 400px; border: 2px solid red;"></video>
-
     <script src="/socket.io/socket.io.js"></script>
     <script src="client.js"></script>
 </body>
