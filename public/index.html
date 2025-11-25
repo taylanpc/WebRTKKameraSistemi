@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Uzaktan Kamera İzleme Sistemi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+</head>
+<body>
+    <h1>Cihaz 1: Kamera Akışı (Gönderici)</h1>
+    <div>
+        <button id="toggleButton" style="padding: 10px; background-color: #f44336; color: white; border: none; cursor: pointer;">Kamerayı Kapat</button>
+        <p id="statusMessage" style="color: blue; font-weight: bold;"></p>
+    </div>
+    
+    <video id="localVideo" autoplay muted style="width: 90vw; max-width: 400px; border: 2px solid green;"></video>
+    
+    <h2>Cihaz 2: İzleyici Akışı (Alıcı)</h2>
+    <p id="remoteStatusMessage" style="color: red; font-weight: bold;"></p> 
+    <video id="remoteVideo" autoplay style="width: 90vw; max-width: 400px; border: 2px solid red;"></video>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
