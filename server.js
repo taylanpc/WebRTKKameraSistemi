@@ -1,4 +1,4 @@
-// server.js (ODA KUR/KATIL MANTIKLI NİHAİ DÜZELTME)
+// server.js (ODA KUR/KATIL VE ODA ÇIKIŞI İLE NİHAİ DÜZELTME)
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -14,15 +14,34 @@ const activeRooms = new Map();
 
 app.use(express.static('public'));
 
+// Oda Temizleme Fonksiyonu
+function cleanupRoom(roomName, socketId) {
+    if (!roomName) return;
+
+    const room = io.sockets.adapter.rooms.get(roomName);
+    const userCount = room ? room.size : 0;
+    
+    // Eğer ayrılan kişi kurucu ise, odayı aktif odalar listesinden temizle
+    if (activeRooms.get(roomName) === socketId) {
+        activeRooms.delete(roomName);
+        console.log(`[${socketId}] KURUCU AYRILDI. "${roomName}" odası temizlendi.`);
+    }
+
+    // Odadaki diğer kişiye ayrıldığını bildir (kullanıcı sayısı 0'dan büyükse)
+    if (userCount > 0) {
+        socket.to(roomName).emit('partnerDisconnected');
+    }
+}
+
+
 io.on('connection', (socket) => {
     let currentRoom = null;
     console.log('Yeni bir kullanıcı bağlandı:', socket.id);
 
-    // Yeni: Kullanıcıdan oda adını ve rolünü (kurucu/katılımcı) alarak odaya katılmasını sağla
+    // Yeni: Odaya Katılma sinyali
     socket.on('join', ({ roomName, role }) => {
         if (!roomName) return socket.emit('joinError', "Oda Adı boş bırakılamaz.");
 
-        // Önceki odadan ayrıl
         if (currentRoom) socket.leave(currentRoom);
 
         const room = io.sockets.adapter.rooms.get(roomName);
@@ -31,18 +50,17 @@ io.on('connection', (socket) => {
         // --- ODA KURUCU MANTIĞI ---
         if (role === 'creator') {
             if (activeRooms.has(roomName)) {
-                return socket.emit('joinError', `"${roomName}" odası zaten kurulmuş.`);
+                return socket.emit('joinError', `"${roomName}" odası zaten kurulmuş. Katıl'ı deneyin.`);
             }
-            if (userCount >= 1) { // Normalde 0 olmalı ama emin olmak için
+            if (userCount >= 1) { 
                  return socket.emit('joinError', `"${roomName}" odasında zaten bir kullanıcı var. Katıl'ı deneyin.`);
             }
 
-            // Odayı kur ve kaydet
             socket.join(roomName);
             currentRoom = roomName;
             activeRooms.set(roomName, socket.id);
             console.log(`[${socket.id}] "${roomName}" odasını KURDU.`);
-            socket.emit('waitingForPartner'); // İzleyici beklemesini bildir
+            socket.emit('waitingForPartner');
 
         } 
         
@@ -55,22 +73,28 @@ io.on('connection', (socket) => {
                 return socket.emit('joinError', `"${roomName}" odası dolu.`);
             }
 
-            // Odaya katıl ve iletişimi başlat
             socket.join(roomName);
             currentRoom = roomName;
             console.log(`[${socket.id}] "${roomName}" odasına KATILDI.`);
 
-            // Kurucuya partnerin geldiğini bildir
             const creatorId = activeRooms.get(roomName);
             io.to(creatorId).emit('partnerJoined');
 
-            // İletişimi başlat
-            // Katılımcı Offer beklemesi için isInitiator: false
             socket.emit('roomReady', { roomName: currentRoom, isCreator: false });
-            // Kurucu Offer başlatması için isInitiator: true
             io.to(creatorId).emit('roomReady', { roomName: currentRoom, isCreator: true });
         }
     });
+    
+    // Yeni: Odadan Çık sinyali (Manuel)
+    socket.on('leaveRoom', () => {
+        if (currentRoom) {
+            socket.leave(currentRoom);
+            cleanupRoom(currentRoom, socket.id);
+            currentRoom = null;
+            console.log(`[${socket.id}] Manuel olarak odadan ayrıldı.`);
+        }
+    });
+
 
     // WebRTC Sinyalleme: Gelen sinyali odadaki diğer kişiye ilet
     const forwardSignal = (type) => (data) => {
@@ -86,17 +110,10 @@ io.on('connection', (socket) => {
     socket.on('cameraToggle', forwardSignal('cameraToggle'));
     socket.on('cameraSwitch', forwardSignal('cameraSwitch'));
 
-    // Kullanıcı bağlantısı kesildiğinde
+    // Kullanıcı bağlantısı kesildiğinde (Tarayıcı kapatma/Yenileme)
     socket.on('disconnect', () => {
         if (currentRoom) {
-            // Eğer ayrılan kişi kurucu ise, odayı temizle
-            if (activeRooms.get(currentRoom) === socket.id) {
-                activeRooms.delete(currentRoom);
-                console.log(`[${socket.id}] KURUCU AYRILDI. "${currentRoom}" odası kapandı.`);
-            }
-
-            // Odadaki diğer kişiye ortağının ayrıldığını bildir
-            socket.to(currentRoom).emit('partnerDisconnected');
+            cleanupRoom(currentRoom, socket.id);
         }
         console.log('Kullanıcı ayrıldı:', socket.id);
     });
