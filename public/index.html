@@ -16,14 +16,14 @@
         #remoteVideo { border-color: #f44336; width: 100%; max-width: 400px; height: auto; margin: 10px; border: 3px solid; display: block; }
         
         button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
-        #toggleButton { background-color: #4CAF50; }
-        #muteButton { background-color: #FF9800; }
-        #switchCameraButton { background-color: #2196F3; display: none; }
         
-        /* Yeni Oda Buton Renkleri */
+        /* Buton Renkleri */
+        #toggleButton { background-color: #4CAF50; }
+        #muteButton { background-color: #FF9800; } /* YENİ: Turuncu Ses Kontrolü */
+        #switchCameraButton { background-color: #2196F3; display: none; }
         #createButton { background-color: #007bff; }
         #joinButton { background-color: #28a745; }
-        #leaveButton { background-color: #dc3545; } /* Kırmızı Çıkış Butonu */
+        #leaveButton { background-color: #dc3545; } 
         
         #roomSetup { margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #fff; }
         #statusContainer { margin-top: 15px; }
@@ -48,9 +48,9 @@
             <div id="statusContainer">
                 <p id="statusMessage" style="color: orange; font-weight: bold;">Bağlantı bekleniyor...</p>
                 <button id="toggleButton">Kamerayı Aç</button>
-                <button id="muteButton">Sesi Kapat</button> 
-                <button id="switchCameraButton" class="hidden">Kamerayı Çevir</button>
-                <button id="leaveButton">Odadan Çık</button> </div>
+                <button id="muteButton">Sesi Kapat</button> <button id="switchCameraButton" class="hidden">Kamerayı Çevir</button>
+                <button id="leaveButton">Odadan Çık</button>
+            </div>
 
             <hr>
 
