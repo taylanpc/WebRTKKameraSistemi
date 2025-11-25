@@ -1,11 +1,11 @@
-// server.js (ODA KUR/KATIL VE ODA ÇIKIŞI İLE NİHAİ DÜZELTME)
+// server.js (ReferenceError düzeltilmiş versiyon)
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server); // io objesi tüm sunucuyu temsil eder
 
 const PORT = process.env.PORT || 3000;
 
@@ -14,23 +14,21 @@ const activeRooms = new Map();
 
 app.use(express.static('public'));
 
-// Oda Temizleme Fonksiyonu
+// Oda Temizleme Fonksiyonu (Düzeltildi: Artık 'socket' yerine 'io' kullanılıyor)
+// Bu fonksiyon, global io objesini kullanarak odadaki herkese ulaşabilir.
 function cleanupRoom(roomName, socketId) {
     if (!roomName) return;
 
-    const room = io.sockets.adapter.rooms.get(roomName);
-    const userCount = room ? room.size : 0;
-    
-    // Eğer ayrılan kişi kurucu ise, odayı aktif odalar listesinden temizle
+    // Ayrılan kişi kurucu ise, odayı aktif odalar listesinden temizle
     if (activeRooms.get(roomName) === socketId) {
         activeRooms.delete(roomName);
         console.log(`[${socketId}] KURUCU AYRILDI. "${roomName}" odası temizlendi.`);
     }
 
-    // Odadaki diğer kişiye ayrıldığını bildir (kullanıcı sayısı 0'dan büyükse)
-    if (userCount > 0) {
-        socket.to(roomName).emit('partnerDisconnected');
-    }
+    // Odadaki diğer kişiye ayrıldığını bildir
+    // io.to(roomName) odadaki TÜM cihazlara (ayrılan hariç) sinyal gönderir.
+    io.to(roomName).emit('partnerDisconnected');
+    console.log(`"${roomName}" odasındaki partnerlere bağlantı kesildi sinyali gönderildi.`);
 }
 
 
@@ -89,7 +87,15 @@ io.on('connection', (socket) => {
     socket.on('leaveRoom', () => {
         if (currentRoom) {
             socket.leave(currentRoom);
-            cleanupRoom(currentRoom, socket.id);
+            // Manuel çıkışta partnerDisconnected sinyalini odadaki diğer kişiye gönder
+            socket.to(currentRoom).emit('partnerDisconnected'); 
+
+            // Oda Temizliğini yap
+            if (activeRooms.get(currentRoom) === socket.id) {
+                activeRooms.delete(currentRoom);
+                console.log(`[${socket.id}] KURUCU Manuel ayrıldı. "${currentRoom}" odası temizlendi.`);
+            }
+            
             currentRoom = null;
             console.log(`[${socket.id}] Manuel olarak odadan ayrıldı.`);
         }
@@ -113,7 +119,19 @@ io.on('connection', (socket) => {
     // Kullanıcı bağlantısı kesildiğinde (Tarayıcı kapatma/Yenileme)
     socket.on('disconnect', () => {
         if (currentRoom) {
-            cleanupRoom(currentRoom, socket.id);
+            // Bağlantı kesildiğinde manuel çıkıştaki gibi cleanupRoom fonksiyonunu çağır
+            // cleanupRoom(currentRoom, socket.id); // <-- Bu fonksiyonu kaldırıp içeriğini buraya alalım, çünkü socket.to artık çalışmayacak
+            
+            // Eğer ayrılan kişi kurucu ise, odayı aktif odalar listesinden temizle
+            if (activeRooms.get(currentRoom) === socket.id) {
+                activeRooms.delete(currentRoom);
+                console.log(`[${socket.id}] KURUCU BAĞLANTISI KESİLDİ. "${currentRoom}" odası temizlendi.`);
+            }
+            
+            // Odadaki diğer kişiye ayrıldığını bildir
+            socket.to(currentRoom).emit('partnerDisconnected');
+
+            console.log(`[${socket.id}] Bağlantı kesildi. Partner bildirildi.`);
         }
         console.log('Kullanıcı ayrıldı:', socket.id);
     });
