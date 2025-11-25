@@ -1,4 +1,4 @@
-// public/client.js (KESİN ÇÖZÜM İÇİN DÜZELTİLMİŞ VE GÜÇLENDİRİLMİŞ VERSİYON)
+// public/client.js (KESİN ÇÖZÜM İÇİN SON DÜZELTİLMİŞ VE GÜÇLENDİRİLMİŞ VERSİYON)
 
 const socket = io();
 const localVideo = document.getElementById('localVideo');
@@ -47,15 +47,17 @@ function resetInterface() {
     roomStatus.style.color = 'blue';
     roomStatus.innerText = "Lütfen bir Oda Adı girin.";
 
-    // KRİTİK TEMİZLİK
+    // KRİTİK TEMİZLİK: stopCameraStream çağrısı akışı tamamen durdurmalı
     if (localStream) stopCameraStream(false);
+    
     if (peerConnection) peerConnection.close();
     peerConnection = null;
+    
     remoteVideo.srcObject = null;
     localVideo.srcObject = null;
     remoteVideo.style.display = 'block'; 
 
-    // Durum değişkenlerini sıfırla
+    // Geri kalan durum değişkenlerini sıfırla
     isCameraOn = false;
     isMuted = false;
     isInitiator = false;
@@ -111,11 +113,13 @@ leaveButton.addEventListener('click', () => {
 // --- Kamera ve Ses Akışı Yönetimi ---
 async function getCameraStream(deviceId) {
     try {
+        // Eğer akış açıksa ve cihaz değiştirmeyeceksek, videoyu sadece yerel olarak göster.
         if (localStream && isCameraOn && !deviceId) {
             localVideo.srcObject = localStream;
             return true;
         }
         
+        // Önceki akışı kapat
         if (localStream) localStream.getTracks().forEach(track => track.stop());
         
         const constraints = {
@@ -164,9 +168,12 @@ async function getCameraStream(deviceId) {
 
 function stopCameraStream(sendSignal = true) {
     if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+        // KRİTİK KISIM: Her bir track'i durdurmaya zorla
+        localStream.getTracks().forEach(track => {
+            track.stop();
+        });
         localVideo.srcObject = null;
-        localStream = null; 
+        localStream = null; // Akış nesnesini temizle
     }
     isCameraOn = false;
     toggleButton.innerText = "Kamerayı Aç";
@@ -228,7 +235,7 @@ if (toggleButton) {
 }
 
 
-// --- WebRTC Bağlantı Yönetimi (DÜZELTİLDİ) ---
+// --- WebRTC Bağlantı Yönetimi ---
 
 function createPeerConnection(initiator) {
     isInitiator = initiator; 
