@@ -6,19 +6,22 @@
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f4; }
         .container { max-width: 800px; margin: auto; }
-        /* Kendi görüntümüzü görmemek için localVideo'yu gizleyebiliriz */
+        
+        /* Kendi görüntümüzü tekrar görünür yapıyoruz (display: block) */
         #localVideo { 
             width: 100%; max-width: 400px; height: auto; margin: 10px; border: 3px solid; 
             border-color: #4CAF50; /* Yeşil */ 
-            display: none; /* KENDİ GÖRÜNTÜMÜZÜ GİZLİYORUZ */
+            display: block; /* GÖRÜNÜR YAPIYORUZ */
         }
+        
         #remoteVideo { border-color: #f44336; /* Kırmızı */ width: 100%; max-width: 400px; height: auto; margin: 10px; border: 3px solid; display: block; }
+        
         button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
         #toggleButton { background-color: #4CAF50; }
-        #muteButton { background-color: #FF9800; } /* Yeni Mikrofon Düğmesi */
-        #createButton { background-color: #007bff; }
-        #joinButton { background-color: #28a745; }
+        #muteButton { background-color: #FF9800; } /* Mikrofon Düğmesi */
         #switchCameraButton { background-color: #2196F3; display: none; }
+        
+        /* Oda Giriş Formu */
         #roomSetup { margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #fff; }
         #statusContainer { margin-top: 15px; }
         .hidden { display: none; }
@@ -29,30 +32,28 @@
         <h1>WebRTC Kamera İzleme Sistemi</h1>
 
         <div id="roomSetup">
-            <h2>Oda Adını Gir</h2>
-            <input type="text" id="roomName" placeholder="Oda Adı (Örn: deneme)" required>
-            
-            <button id="createButton">Odayı Kur</button>
-            <button id="joinButton">Odaya Katıl</button>
-
-            <p id="roomStatus" style="color: blue; font-weight: bold; margin-top: 10px;">Lütfen bir Oda Adı girin.</p>
+            <h2>Odaya Katıl</h2>
+            <input type="text" id="roomName" placeholder="Oda Adı (Örn: necati)" required>
+            <button id="joinButton">Odaya Bağlan</button>
+            <p id="roomStatus" style="color: blue; font-weight: bold; margin-top: 10px;"></p>
         </div>
 
         <div id="videoContainer" class="hidden">
             <div id="statusContainer">
                 <p id="statusMessage" style="color: orange; font-weight: bold;">Bağlantı bekleniyor...</p>
                 <button id="toggleButton">Kamerayı Aç</button>
-                <button id="muteButton">Sesi Kapat</button> <button id="switchCameraButton" class="hidden">Kamerayı Çevir</button>
+                <button id="muteButton">Sesi Kapat</button> 
+                <button id="switchCameraButton" class="hidden">Kamerayı Çevir</button>
             </div>
 
             <hr>
 
-            <h2>Cihaz 1: Kamera Akışı (Gönderici)</h2>
+            <h2>Cihaz 1: Kamera Akışı (Kendi Görüşün)</h2>
             <video id="localVideo" autoplay muted></video>
 
             <hr>
 
-            <h2>Cihaz 2: İzleyici Akışı (Alıcı)</h2>
+            <h2>Cihaz 2: İzleyici Akışı (Partner Görüşü)</h2>
             <video id="remoteVideo" autoplay></video>
             <p id="remoteStatusMessage" style="color: red; font-weight: bold;"></p>
         </div>
