@@ -11,7 +11,9 @@
         #remoteVideo { border-color: #f44336; /* Kırmızı */ }
         button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
         #toggleButton { background-color: #4CAF50; }
-        #switchCameraButton { background-color: #2196F3; display: none; /* Başlangıçta gizli */ }
+        #createButton { background-color: #007bff; }
+        #joinButton { background-color: #28a745; }
+        #switchCameraButton { background-color: #2196F3; display: none; }
         #roomSetup { margin-bottom: 20px; padding: 20px; border: 1px solid #ccc; background-color: #fff; }
         #statusContainer { margin-top: 15px; }
         .hidden { display: none; }
@@ -22,10 +24,13 @@
         <h1>WebRTC Kamera İzleme Sistemi</h1>
 
         <div id="roomSetup">
-            <h2>Odaya Katıl</h2>
-            <input type="text" id="roomName" placeholder="Oda Adı (Örn: necati)" required>
-            <button id="joinButton">Odaya Bağlan</button>
-            <p id="roomStatus" style="color: blue; font-weight: bold; margin-top: 10px;"></p>
+            <h2>Oda Adını Gir</h2>
+            <input type="text" id="roomName" placeholder="Oda Adı (Örn: deneme)" required>
+            
+            <button id="createButton">Odayı Kur</button>
+            <button id="joinButton">Odaya Katıl</button>
+
+            <p id="roomStatus" style="color: blue; font-weight: bold; margin-top: 10px;">Lütfen bir Oda Adı girin.</p>
         </div>
 
         <div id="videoContainer" class="hidden">
