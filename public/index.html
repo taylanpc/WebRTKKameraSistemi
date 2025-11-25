@@ -7,14 +7,25 @@
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f4; }
         .container { max-width: 800px; margin: auto; }
         
-        #localVideo { 
-            width: 100%; max-width: 400px; height: auto; margin: 10px; border: 3px solid; 
-            border-color: #4CAF50; 
+        /* Video kapsayıcıları, videoların içine ekleneceği yerler */
+        #localVideoWrapper, #remoteVideoWrapper {
+            margin: 10px 0;
+            border: 3px solid;
+            display: flex; /* Düzgün hizalama için */
+            justify-content: center;
+        }
+
+        #localVideoWrapper { border-color: #4CAF50; }
+        #remoteVideoWrapper { border-color: #f44336; }
+
+        /* Video elementlerinin kendisi, client.js tarafından dinamik olarak oluşturulacak/silinecektir */
+        #localVideo, #remoteVideo {
+            width: 100%; 
+            max-width: 400px; 
+            height: auto; 
             display: block; 
         }
-        
-        #remoteVideo { border-color: #f44336; width: 100%; max-width: 400px; height: auto; margin: 10px; border: 3px solid; display: block; }
-        
+
         button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; }
         
         /* Buton Renkleri */
@@ -56,13 +67,17 @@
             <hr>
 
             <h2>Cihaz 1: Kamera Akışı (Kendi Görüşün)</h2>
-            <video id="localVideo" autoplay muted></video>
+            <div id="localVideoWrapper">
+                <video id="localVideo" autoplay muted></video>
+            </div>
 
             <hr>
 
             <h2>Cihaz 2: İzleyici Akışı (Partner Görüşü)</h2>
-            <video id="remoteVideo" autoplay></video>
-            <p id="remoteStatusMessage" style="color: red; font-weight: bold;"></p>
+            <div id="remoteVideoWrapper">
+                <video id="remoteVideo" autoplay></video>
+                <p id="remoteStatusMessage" style="color: red; font-weight: bold;"></p>
+            </div>
         </div>
 
     </div>
