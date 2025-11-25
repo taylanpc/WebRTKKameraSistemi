@@ -1,10 +1,10 @@
-// public/client.js (SES VE MİKROFON KONTROLÜ EKLENMİŞ VERSİYON)
+// public/client.js (GÜÇLÜ SIFIRLAMA MANTIĞI İLE GÜNCELLENMİŞ VERSİYON)
 
 const socket = io();
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
 const toggleButton = document.getElementById('toggleButton');
-const muteButton = document.getElementById('muteButton'); // YENİ: Mute butonu
+const muteButton = document.getElementById('muteButton'); 
 const switchCameraButton = document.getElementById('switchCameraButton');
 const leaveButton = document.getElementById('leaveButton');
 const statusMessage = document.getElementById('statusMessage');
@@ -19,7 +19,7 @@ const roomStatus = document.getElementById('roomStatus');
 let peerConnection; 
 let localStream;    
 let isCameraOn = false; 
-let isMuted = false; // YENİ: Mikrofon durumu
+let isMuted = false; 
 let isInitiator = false;
 let currentDeviceId = 'default';
 
@@ -28,13 +28,36 @@ const configuration = {
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
 };
 
-// --- Arayüz Sıfırlama ---
+// --- Arayüz ve Bağlantı Güçlü Sıfırlama ---
 function resetInterface() {
     disableRoomButtons(false);
     roomSetup.classList.remove('hidden');
     videoContainer.classList.add('hidden');
     roomStatus.style.color = 'blue';
     roomStatus.innerText = "Lütfen bir Oda Adı girin.";
+
+    // KRİTİK TEMİZLİK: Akışları ve video elementlerini sıfırla
+    if (localStream) stopCameraStream(false);
+    if (peerConnection) peerConnection.close();
+    peerConnection = null;
+    remoteVideo.srcObject = null;
+    localVideo.srcObject = null; // Local video elementini de temizle
+    remoteVideo.style.display = 'block'; // Varsayılana döndür
+
+    // Geri kalan durum değişkenlerini sıfırla
+    isCameraOn = false;
+    isMuted = false;
+    isInitiator = false;
+    currentDeviceId = 'default';
+    
+    // Buton ve mesajları sıfırla
+    muteButton.innerText = "Sesi Kapat";
+    muteButton.style.backgroundColor = "#FF9800";
+    toggleButton.innerText = "Kamerayı Aç";
+    toggleButton.style.backgroundColor = "#4CAF50";
+    switchCameraButton.classList.add('hidden');
+    remoteStatusMessage.innerText = "";
+    statusMessage.innerText = "Bağlantı bekleniyor...";
 }
 
 // --- Oda Giriş ve Çıkış Yönetimi ---
@@ -68,19 +91,13 @@ joinButton.addEventListener('click', () => {
 
 // Odadan Çık butonu
 leaveButton.addEventListener('click', () => {
-    if (localStream) stopCameraStream(false);
-    if (peerConnection) peerConnection.close();
-    peerConnection = null;
-    remoteVideo.srcObject = null;
-
     socket.emit('leaveRoom');
-
     resetInterface();
     statusMessage.innerText = "Odadan başarıyla çıktınız.";
 });
 
 
-// --- Kamera ve Ses Akışı Yönetimi (GÜNCELLENDİ) ---
+// --- Kamera ve Ses Akışı Yönetimi ---
 async function getCameraStream(deviceId) {
     try {
         if (localStream && isCameraOn && !deviceId) {
@@ -92,17 +109,14 @@ async function getCameraStream(deviceId) {
         
         const constraints = {
             video: { deviceId: deviceId ? { exact: deviceId } : currentDeviceId },
-            audio: true // Ses akışını da istiyoruz!
+            audio: true 
         };
         
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         localVideo.srcObject = localStream;
         isCameraOn = true;
         
-        // Ses varsayılan olarak açık gelir
-        localStream.getAudioTracks().forEach(track => track.enabled = true); 
-        muteButton.innerText = "Sesi Kapat";
-        isMuted = false;
+        localStream.getAudioTracks().forEach(track => track.enabled = !isMuted); 
 
         if (!deviceId) {
             currentDeviceId = localStream.getVideoTracks()[0].getSettings().deviceId;
@@ -152,15 +166,15 @@ function stopCameraStream(sendSignal = true) {
 }
 
 
-// --- Mikrofon Kontrolü Mantığı (YENİ) ---
+// --- Mikrofon Kontrolü Mantığı ---
 muteButton.addEventListener('click', () => {
     if (!localStream) return;
     const audioTracks = localStream.getAudioTracks();
-    if (audioTracks.length === 0) return; // Ses akışı yoksa işlem yapma
+    if (audioTracks.length === 0) return; 
 
     isMuted = !isMuted;
     audioTracks.forEach(track => { 
-        track.enabled = !isMuted; // Mikrofonu kapat/aç
+        track.enabled = !isMuted;
     });
 
     muteButton.innerText = isMuted ? "Sesi Aç" : "Sesi Kapat";
@@ -203,6 +217,7 @@ if (toggleButton) {
 
 
 // --- WebRTC Bağlantı Yönetimi ---
+
 function createPeerConnection(initiator) {
     isInitiator = initiator; 
     
@@ -242,11 +257,15 @@ function createPeerConnection(initiator) {
 
 
 // --- Sunucu Sinyalleri ---
+
 socket.on('joinError', (message) => {
     disableRoomButtons(false);
     roomStatus.style.color = 'red';
     roomStatus.innerText = message;
+    // Hata durumunda da güçlü temizlik yap
     if(localStream) stopCameraStream(false);
+    if(peerConnection) peerConnection.close();
+    peerConnection = null;
 });
 
 socket.on('waitingForPartner', () => {
@@ -278,11 +297,8 @@ socket.on('roomReady', (data) => {
 // Partner Ayrıldığında VEYA Kurucu Odadan Çıktığında (ODA TEMİZLENDİ)
 socket.on('partnerDisconnected', () => {
     remoteStatusMessage.innerText = "Partneriniz bağlantıyı kesti! Oda temizlendi. Yeniden kurun/katılın.";
-    remoteVideo.srcObject = null;
-    remoteVideo.style.display = 'none';
-    if(peerConnection) peerConnection.close();
-    peerConnection = null;
     
+    // GÜÇLÜ SIFIRLAMA
     resetInterface();
     statusMessage.innerText = "Partner ayrıldı. Oda temizlendi.";
 });
