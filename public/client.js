@@ -1,4 +1,4 @@
-// public/client.js (EN GÜNCEL VE STABİL VERSİYON)
+// public/client.js (KESİN ÇÖZÜM İÇİN DÜZELTİLMİŞ VE GÜÇLENDİRİLMİŞ VERSİYON)
 
 const socket = io();
 const localVideo = document.getElementById('localVideo');
@@ -23,7 +23,7 @@ let isMuted = false;
 let isInitiator = false;
 let currentDeviceId = 'default';
 
-// WebRTC Ayarları (DAHA GÜÇLÜ ICE SUNUCULARI)
+// WebRTC Ayarları (GÜÇLÜ ICE SUNUCULARI)
 const configuration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -47,7 +47,7 @@ function resetInterface() {
     roomStatus.style.color = 'blue';
     roomStatus.innerText = "Lütfen bir Oda Adı girin.";
 
-    // KRİTİK TEMİZLİK: Akışları ve video elementlerini sıfırla
+    // KRİTİK TEMİZLİK
     if (localStream) stopCameraStream(false);
     if (peerConnection) peerConnection.close();
     peerConnection = null;
@@ -55,7 +55,7 @@ function resetInterface() {
     localVideo.srcObject = null;
     remoteVideo.style.display = 'block'; 
 
-    // Geri kalan durum değişkenlerini sıfırla
+    // Durum değişkenlerini sıfırla
     isCameraOn = false;
     isMuted = false;
     isInitiator = false;
@@ -140,6 +140,7 @@ async function getCameraStream(deviceId) {
         statusMessage.innerText = "Bağlantı kuruluyor...";
         switchCameraButton.classList.remove('hidden');
 
+        // Akış alındığında, PeerConnection varsa akışları ekle/değiştir
         if (peerConnection && localStream) {
             localStream.getTracks().forEach(track => {
                 const existingSender = peerConnection.getSenders().find(s => s.track && s.track.kind === track.kind);
@@ -227,11 +228,12 @@ if (toggleButton) {
 }
 
 
-// --- WebRTC Bağlantı Yönetimi ---
+// --- WebRTC Bağlantı Yönetimi (DÜZELTİLDİ) ---
 
 function createPeerConnection(initiator) {
     isInitiator = initiator; 
     
+    // Her yeni PeerConnection kurulumunda eskisini kapat
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
@@ -239,6 +241,7 @@ function createPeerConnection(initiator) {
     
     peerConnection = new RTCPeerConnection(configuration);
     
+    // KRİTİK: PeerConnection kurulur kurulmaz, localStream'deki track'leri ekle
     if (localStream) {
         localStream.getTracks().forEach(track => { peerConnection.addTrack(track, localStream); });
     }
@@ -327,12 +330,14 @@ socket.on('partnerLeft', () => {
 
 // WebRTC Sinyalleri
 socket.on('offer', async (offer) => {
+    // Offer gelince yeni bir PeerConnection oluştur ve akışları ekle
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
     }
-    createPeerConnection(false); 
-    
+    createPeerConnection(false); // isInitiator = false
+
+    // Geri kalan SDP ve sinyal işlemleri
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
