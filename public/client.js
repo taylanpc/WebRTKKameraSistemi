@@ -1,8 +1,6 @@
-// public/client.js (KESİN ÇÖZÜM İÇİN SON DÜZELTİLMİŞ VE GÜÇLENDİRİLMİŞ VERSİYON)
+// public/client.js (ÖN BELLEK SORUNU İÇİN KÖKTEN ÇÖZÜM)
 
 const socket = io();
-const localVideo = document.getElementById('localVideo');
-const remoteVideo = document.getElementById('remoteVideo');
 const toggleButton = document.getElementById('toggleButton');
 const muteButton = document.getElementById('muteButton'); 
 const switchCameraButton = document.getElementById('switchCameraButton');
@@ -15,6 +13,14 @@ const joinButton = document.getElementById('joinButton');
 const createButton = document.getElementById('createButton');
 const roomNameInput = document.getElementById('roomName');
 const roomStatus = document.getElementById('roomStatus');
+
+// Kapsayıcı Elementler (HTML'deki yapıyı kontrol et!)
+const localVideoWrapper = document.getElementById('localVideoWrapper');
+const remoteVideoWrapper = document.getElementById('remoteVideoWrapper');
+
+// Başlangıçta DOM'dan referansları al (recreateVideoElements bunu değiştirecek)
+let localVideo = document.getElementById('localVideo'); 
+let remoteVideo = document.getElementById('remoteVideo'); 
 
 let peerConnection; 
 let localStream;    
@@ -39,6 +45,33 @@ const configuration = {
     ] 
 };
 
+
+// --- Kökten Video Elementi Yenileme (ÖN BELLEK ÇÖZÜMÜ) ---
+function recreateVideoElements() {
+    // 1. Eski elementleri kaldırma
+    if (localVideo) localVideo.remove();
+    if (remoteVideo) remoteVideo.remove();
+
+    // 2. Yeni Video Elementlerini Oluşturma
+    localVideo = document.createElement('video');
+    localVideo.id = 'localVideo';
+    localVideo.autoplay = true;
+    localVideo.muted = true; // Kendi sesimizi duymamak için sessize al
+    
+    remoteVideo = document.createElement('video');
+    remoteVideo.id = 'remoteVideo';
+    remoteVideo.autoplay = true;
+    remoteVideo.controls = false; 
+    
+    // 3. Kapsayıcılara Ekleme
+    localVideoWrapper.appendChild(localVideo);
+    // Remote status mesajı her zaman en altta kalsın
+    remoteVideoWrapper.insertBefore(remoteVideo, remoteStatusMessage); 
+
+    console.log("Video elementleri DOM'da yeniden oluşturuldu.");
+}
+
+
 // --- Arayüz ve Bağlantı Güçlü Sıfırlama ---
 function resetInterface() {
     disableRoomButtons(false);
@@ -47,15 +80,15 @@ function resetInterface() {
     roomStatus.style.color = 'blue';
     roomStatus.innerText = "Lütfen bir Oda Adı girin.";
 
-    // KRİTİK TEMİZLİK: stopCameraStream çağrısı akışı tamamen durdurmalı
+    // 1. KRİTİK TEMİZLİK: Akışı tamamen durdur ve serbest bırak
     if (localStream) stopCameraStream(false);
     
+    // 2. PeerConnection'ı Kapat
     if (peerConnection) peerConnection.close();
     peerConnection = null;
     
-    remoteVideo.srcObject = null;
-    localVideo.srcObject = null;
-    remoteVideo.style.display = 'block'; 
+    // 3. KRİTİK: Video elementlerini DOM'dan kaldırıp yeniden oluştur
+    recreateVideoElements();
 
     // Geri kalan durum değişkenlerini sıfırla
     isCameraOn = false;
@@ -127,6 +160,7 @@ async function getCameraStream(deviceId) {
             audio: true 
         };
         
+        // KRİTİK: Yeni localVideo elementine atamadan önce akışı al
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         localVideo.srcObject = localStream;
         isCameraOn = true;
@@ -185,7 +219,8 @@ function stopCameraStream(sendSignal = true) {
 }
 
 
-// --- Mikrofon Kontrolü Mantığı ---
+// --- Mikrofon Kontrolü, Kamera Çevirme ve Düğme Olayları (DEĞİŞMEDİ) ---
+
 muteButton.addEventListener('click', () => {
     if (!localStream) return;
     const audioTracks = localStream.getAudioTracks();
@@ -201,7 +236,6 @@ muteButton.addEventListener('click', () => {
 });
 
 
-// --- Kamera Çevirme Mantığı ---
 switchCameraButton.addEventListener('click', async () => {
     if (!isCameraOn) return;
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -219,7 +253,7 @@ switchCameraButton.addEventListener('click', async () => {
     }
 });
 
-// --- Düğme Olayı Yöneticisi ---
+
 if (toggleButton) {
     toggleButton.addEventListener('click', () => {
         if (localStream && isCameraOn) {
@@ -253,12 +287,28 @@ function createPeerConnection(initiator) {
         localStream.getTracks().forEach(track => { peerConnection.addTrack(track, localStream); });
     }
 
+    // KRİTİK DÜZELTME: Akışı video etiketine bağlarken play() ile oynatmayı zorla
     peerConnection.ontrack = (event) => {
-        if (remoteVideo.srcObject !== event.streams[0]) {
-            remoteVideo.srcObject = event.streams[0];
-            remoteVideo.style.display = 'block'; 
-            remoteStatusMessage.innerText = "Uzaktan bağlantı başarılı!";
-            console.log('Uzaktan gelen akış (Kamera ve Ses) bağlandı.');
+        const [remoteStream] = event.streams;
+        
+        if (remoteVideo.srcObject !== remoteStream) {
+            
+            // 1. Akışı bağla (SRC'yi ayarla)
+            remoteVideo.srcObject = remoteStream;
+            
+            // 2. Akışın yüklenmesini bekle ve sonra oynatmayı zorla
+            remoteVideo.onloadedmetadata = () => {
+                 remoteVideo.play()
+                    .then(() => {
+                        remoteVideo.style.display = 'block'; 
+                        remoteStatusMessage.innerText = "Uzaktan bağlantı başarılı!";
+                        console.log('Uzaktan gelen akış (Kamera ve Ses) bağlandı ve oynatılıyor.');
+                    })
+                    .catch(e => {
+                        console.error("Video oynatma (autoplay) engellendi:", e);
+                        remoteStatusMessage.innerText = "Bağlantı başarılı, ancak oynatma engellendi. Video alanına tıklayın.";
+                    });
+            };
         }
     };
     
@@ -277,7 +327,7 @@ function createPeerConnection(initiator) {
 }
 
 
-// --- Sunucu Sinyalleri ---
+// --- Sunucu Sinyalleri (DEĞİŞMEDİ) ---
 
 socket.on('joinError', (message) => {
     disableRoomButtons(false);
@@ -324,7 +374,8 @@ socket.on('partnerDisconnected', () => {
 
 // Partner Ayrıldığında VEYA Koptuğunda (ODA AKTİF KALDI) 
 socket.on('partnerLeft', () => {
-    remoteStatusMessage.innerText = "Partneriniz bağlantıyı kesti! Odayı tekrar kurmasını/katılmasını bekleyin.";
+    remoteStatusMessage.innerText = "Partneriniz bağlantıyı kesti! Yeni bir bağlantı bekleniyor...";
+    
     remoteVideo.srcObject = null;
     remoteVideo.style.display = 'none';
     
@@ -337,14 +388,12 @@ socket.on('partnerLeft', () => {
 
 // WebRTC Sinyalleri
 socket.on('offer', async (offer) => {
-    // Offer gelince yeni bir PeerConnection oluştur ve akışları ekle
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
     }
-    createPeerConnection(false); // isInitiator = false
+    createPeerConnection(false); 
 
-    // Geri kalan SDP ve sinyal işlemleri
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
