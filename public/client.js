@@ -1,4 +1,4 @@
-// public/client.js (SES, MİKROFON KONTROLÜ VE KENDİNİ GÖRMEME DÜZELTMESİ)
+// public/client.js (SELF-VIEW AÇIK, SES/MİKROFON KONTROLÜ EKLENMİŞ SON VERSİYON)
 
 const socket = io();
 const localVideo = document.getElementById('localVideo');
@@ -11,14 +11,13 @@ const remoteStatusMessage = document.getElementById('remoteStatusMessage');
 const roomSetup = document.getElementById('roomSetup');
 const videoContainer = document.getElementById('videoContainer');
 const joinButton = document.getElementById('joinButton');
-const createButton = document.getElementById('createButton');
 const roomNameInput = document.getElementById('roomName');
 const roomStatus = document.getElementById('roomStatus');
 
 let peerConnection; 
 let localStream;    
 let isCameraOn = false; 
-let isMuted = false; // Yeni
+let isMuted = false; // Mikrofon durumu
 let sender; 
 let isInitiator = false;
 let currentDeviceId = 'default';
@@ -29,33 +28,19 @@ const configuration = {
 };
 
 // --- Oda Giriş Mantığı ---
-function disableRoomButtons(disabled) {
-    createButton.disabled = disabled;
-    joinButton.disabled = disabled;
-    roomNameInput.disabled = disabled;
-}
-
-createButton.addEventListener('click', () => {
-    const roomName = roomNameInput.value.trim();
-    if (roomName) {
-        disableRoomButtons(true);
-        roomStatus.innerText = `"${roomName}" odası kuruluyor...`;
-        socket.emit('join', { roomName: roomName, role: 'creator' });
-    } else {
-        alert("Lütfen bir Oda Adı girin.");
-    }
-});
-
 joinButton.addEventListener('click', () => {
     const roomName = roomNameInput.value.trim();
     if (roomName) {
-        disableRoomButtons(true);
-        roomStatus.innerText = `"${roomName}" odasına bağlanılıyor...`;
-        socket.emit('join', { roomName: roomName, role: 'joiner' });
+        joinButton.disabled = true;
+        roomNameInput.disabled = true;
+        roomStatus.innerText = "Odaya bağlanılıyor...";
+        // Basit katılım sinyali gönderiliyor
+        socket.emit('join', roomName);
     } else {
         alert("Lütfen bir Oda Adı girin.");
     }
 });
+
 
 // --- Kamera ve Ses Akışı Yönetimi ---
 
@@ -73,20 +58,19 @@ async function getCameraStream(deviceId) {
         localVideo.srcObject = localStream;
         isCameraOn = true;
         
-        // KENDİNİ GÖRMEME: localVideo'yu gizledik ama akış hala peerConnection'a gidiyor.
-        // muted=true'yu tutuyoruz.
-
         // Ses varsayılan olarak açıktır (isMuted = false)
         localStream.getAudioTracks().forEach(track => track.enabled = true); 
         muteButton.innerText = "Sesi Kapat";
         isMuted = false;
 
+        // Cihaz ID'sini kaydet
         if (!deviceId) {
             currentDeviceId = localStream.getVideoTracks()[0].getSettings().deviceId;
         } else {
              currentDeviceId = deviceId;
         }
 
+        // Arayüzü güncelle
         toggleButton.innerText = "Kamerayı Kapat";
         toggleButton.style.backgroundColor = "#f44336";
         statusMessage.innerText = "Bağlantı kuruluyor...";
@@ -94,13 +78,12 @@ async function getCameraStream(deviceId) {
 
         // Eğer WebRTC bağlantısı zaten varsa, yeni akışı gönder.
         if (peerConnection && localStream) {
-            // Video ve Ses akışlarını tek tek gönderiyoruz
+            // Tüm track'leri (ses ve video) tek tek değiştir veya ekle
             localStream.getTracks().forEach(track => {
-                // Eğer bu track için sender yoksa ekle, varsa replace et
                 const existingSender = peerConnection.getSenders().find(s => s.track && s.track.kind === track.kind);
                 
                 if (existingSender) {
-                    existingSender.replaceTrack(track).catch(e => console.error("Track değiştirme hatası:", e));
+                    existingSender.replaceTrack(track).catch(e => console.error(`Track değiştirme hatası (${track.kind}):`, e));
                 } else {
                     peerConnection.addTrack(track, localStream);
                 }
@@ -147,29 +130,63 @@ muteButton.addEventListener('click', () => {
 
     muteButton.innerText = isMuted ? "Sesi Aç" : "Sesi Kapat";
     muteButton.style.backgroundColor = isMuted ? "#4CAF50" : "#FF9800";
-    
-    // Partner'a mute durumunu bildirebiliriz, ama şimdilik sadece lokal kontrol yeterli.
 });
 
 
-// --- Kamera Çevirme Mantığı, Düğme Olayı Yöneticisi ve WebRTC Bağlantı Yönetimi aynı kalır (Sender hariç) ---
+// --- Kamera Çevirme Mantığı (Aynı Kalır) ---
+switchCameraButton.addEventListener('click', async () => {
+    if (!isCameraOn) return;
 
-// Sadece createPeerConnection'da ufak bir düzeltme:
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+    if (videoDevices.length > 1) {
+        let currentIndex = videoDevices.findIndex(device => device.deviceId === currentDeviceId);
+        let nextIndex = (currentIndex + 1) % videoDevices.length;
+        let nextDeviceId = videoDevices[nextIndex].deviceId;
+
+        const ready = await getCameraStream(nextDeviceId);
+        
+        if (ready) {
+             socket.emit('cameraSwitch'); 
+        }
+    } else {
+        alert("Birden fazla kamera bulunamadı.");
+    }
+});
+
+
+// --- Düğme Olayı Yöneticisi (Aynı Kalır) ---
+if (toggleButton) {
+    toggleButton.addEventListener('click', () => {
+        if (localStream && isCameraOn) {
+            stopCameraStream(true);
+        } else if (!isCameraOn) {
+            getCameraStream().then(ready => {
+                if (ready) {
+                    socket.emit('cameraToggle', { state: 'acik' });
+                }
+            });
+        }
+    });
+}
+
+
+// --- WebRTC Bağlantı Yönetimi ---
+
 function createPeerConnection(initiator) {
     isInitiator = initiator; 
     peerConnection = new RTCPeerConnection(configuration);
     
-    // SENDER'I KUR: Tüm track'leri ekle (Hem video hem ses)
+    // SENDER'I KUR: Tüm track'leri (ses ve video) ekle
     if (localStream) {
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream); 
         });
     }
 
-    // ... diğer ontrack, onicecandidate, onnegotiationneeded kısımları aynı kalır.
-    
+    // Akış geldiğinde (UZAK GÖRÜNTÜ VE SES ALINDIĞINDA)
     peerConnection.ontrack = (event) => {
-        // ... (Uzaktan gelen akış alındığında)
         if (remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             remoteVideo.style.display = 'block'; 
@@ -177,6 +194,113 @@ function createPeerConnection(initiator) {
             console.log('Uzaktan gelen akış (Kamera ve Ses) bağlandı.');
         }
     };
+    
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('candidate', event.candidate);
+        }
+    };
+    
+    peerConnection.onnegotiationneeded = () => {
+        if (isInitiator) {
+            peerConnection.createOffer()
+                .then(offer => peerConnection.setLocalDescription(offer))
+                .then(() => {
+                    socket.emit('offer', peerConnection.localDescription);
+                })
+                .catch(e => console.error("Negotiation Offer hatası:", e));
+        }
+    };
 }
 
-// ... Diğer tüm socket.on fonksiyonları, kamera çevirme ve toggleButton event'leri aynı kalır.
+
+// --- Sunucu Sinyalleri (Basit Oda Sistemi Sinyalleri) ---
+
+socket.on('waitingForPartner', () => {
+    roomStatus.innerText = "Partner bekleniyor... Sayfayı kapatmayın.";
+    getCameraStream(); // İlk giren cihaz kamerayı ve mikrofonu açar
+});
+
+socket.on('roomFull', () => {
+    alert("Bu oda zaten dolu. Lütfen başka bir oda adı deneyin.");
+    joinButton.disabled = false;
+    roomNameInput.disabled = false;
+    roomStatus.innerText = "Bağlantı kesildi.";
+});
+
+// İletişimi Başlatma
+socket.on('startCommunication', async (data) => {
+    roomSetup.classList.add('hidden'); // Formu gizle
+    videoContainer.classList.remove('hidden'); // Video alanını göster
+    
+    // Oda adı başarılı, artık iletişime hazırız.
+    roomStatus.innerText = `Odaya başarıyla katıldınız: ${data.roomName}`;
+    
+    // Cihaz 1 (Gönderici)
+    if (data.isInitiator) {
+        const cameraReady = await getCameraStream(); 
+        if (cameraReady) {
+            createPeerConnection(true); 
+            statusMessage.innerText = "Partner bağlandı. İletişim başlatıldı.";
+        }
+    } else {
+        // Cihaz 2 (İzleyici)
+        getCameraStream(); // Lokal kamera ve mikrofonu açar
+        createPeerConnection(false); 
+        statusMessage.innerText = "Partner bağlandı. İletişim başlatıldı.";
+    }
+});
+
+// Partner ayrıldığında (Aynı Kalır)
+socket.on('partnerDisconnected', () => {
+    remoteStatusMessage.innerText = "Partneriniz bağlantıyı kesti!";
+    remoteVideo.srcObject = null;
+    remoteVideo.style.display = 'none';
+    if(peerConnection) peerConnection.close();
+    peerConnection = null;
+    
+    // Oda girişini tekrar aç
+    joinButton.disabled = false;
+    roomNameInput.disabled = false;
+    roomSetup.classList.remove('hidden');
+    videoContainer.classList.add('hidden');
+    statusMessage.innerText = "Bağlantı bekleniyor...";
+    roomStatus.innerText = "Partner ayrıldı. Yeniden bağlanmak için Oda Adı girin.";
+});
+
+// WebRTC ve diğer sinyaller aynı kalır...
+socket.on('offer', async (offer) => {
+    if (!peerConnection) { createPeerConnection(false); }
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit('answer', answer);
+});
+
+socket.on('answer', async (answer) => {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('candidate', async (candidate) => {
+    if (peerConnection) {
+        try {
+            await peerConnection.addIceCandidate(candidate);
+        } catch (e) {
+            console.error('ICE adayı eklenirken hata:', e);
+        }
+    }
+});
+
+socket.on('cameraToggle', (data) => {
+    if (data.state === 'kapali') {
+        remoteStatusMessage.innerText = "Kullanıcı kamerasını kapattı.";
+        remoteVideo.style.display = 'none'; 
+    } else if (data.state === 'acik') {
+        remoteStatusMessage.innerText = "Görüntü bekleniyor...";
+        remoteVideo.style.display = 'block'; 
+    }
+});
+
+socket.on('cameraSwitch', () => {
+     remoteStatusMessage.innerText = "Partner kamera değiştirdi. Görüntü bekleniyor...";
+});
