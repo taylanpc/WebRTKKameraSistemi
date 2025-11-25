@@ -1,71 +1,106 @@
-// server.js (Uzaktan Erişim ve Oda Mantığı İçin Nihai Versiyon)
-
+// server.js (ODA SİSTEMİ İÇİN GÜNCELLENMİŞ VERSİYON)
 const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http);
+const server = http.createServer(app);
+const io = socketIo(server);
 
-// ÖNEMLİ: Render gibi platformlar PORT'u otomatik verir, bu yüzden process.env.PORT kullanıyoruz.
 const PORT = process.env.PORT || 3000;
-const ROOM_NAME = 'kamera_odasi_123'; // Sabit Oda Adı
 
-// Statik dosyaları (public klasörünü) sun
+// Statik dosyaları public klasöründen sun
 app.use(express.static('public'));
 
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/public/index.html');
-});
-
 io.on('connection', (socket) => {
-    console.log(`Yeni bir kullanıcı bağlandı: ${socket.id}`);
-    
-    // Her kullanıcıyı odaya dahil et
-    socket.join(ROOM_NAME);
-    
-    const room = io.sockets.adapter.rooms.get(ROOM_NAME);
-    const numClients = room ? room.size : 0;
-    
-    console.log(`Oda (${ROOM_NAME}) üye sayısı: ${numClients}`);
+    let currentRoom = null;
+    console.log('Yeni bir kullanıcı bağlandı:', socket.id);
 
-    // YENİ MANTIK: İlk giren cihaz (Kamera) hemen kamerayı açsın
-    if (numClients === 1) {
-        console.log("Odadaki ilk cihaz. Kamerayı açması için sinyal gönderiliyor.");
-        // isOnlyCamera: true, sadece kamerayı aç, WebRTC Offer oluşturma.
-        socket.emit('startCommunication', { isInitiator: true, isOnlyCamera: true }); 
-    }
-
-    // İKİNCİ MANTIK: İki cihaz olduğunda WebRTC iletişimini başlat
-    if (numClients === 2) {
-        const clients = Array.from(room);
-        const senderId = clients[0]; 
-        const receiverId = clients[1];
-
-        console.log(`İki cihaz hazır: WebRTC İletişimi Başlatılıyor.`);
+    // Yeni: Kullanıcıdan oda adını alarak odaya katılmasını sağla
+    socket.on('join', (roomName) => {
+        if (!roomName) {
+            console.log(`[${socket.id}] Geçersiz oda adı denemesi.`);
+            return;
+        }
         
-        // İlk cihaza (Kamera), Offer oluşturmasını söyle
-        io.to(senderId).emit('startCommunication', { isInitiator: true, isOnlyCamera: false });
-        
-        // İkinci cihaza (İzleyici), Answer oluşturmasını söyle
-        io.to(receiverId).emit('startCommunication', { isInitiator: false, isOnlyCamera: false });
-    }
-    
-    // WebRTC sinyalleşme mesajlarını oda içinde yayınla
-    socket.on('offer', (offer) => { socket.to(ROOM_NAME).emit('offer', offer); });
-    socket.on('answer', (answer) => { socket.to(ROOM_NAME).emit('answer', answer); });
-    socket.on('candidate', (candidate) => { socket.to(ROOM_NAME).emit('candidate', candidate); });
+        // Önceki odadan ayrıl (eğer varsa)
+        if (currentRoom) {
+            socket.leave(currentRoom);
+        }
 
-    // Kamera Kapatma/Açma Sinyali
-    socket.on('cameraToggle', (state) => {
-        // Oda içindeki herkese kapatma/açma durumunu bildir
-        socket.to(ROOM_NAME).emit('cameraToggle', state); 
+        currentRoom = roomName;
+        socket.join(currentRoom);
+        
+        const room = io.sockets.adapter.rooms.get(currentRoom);
+        const userCount = room ? room.size : 0;
+        
+        console.log(`[${socket.id}] '${currentRoom}' odasına katıldı. Üye sayısı: ${userCount}`);
+
+        // Odanın üye sayısı 2 olduğunda iletişimi başlat
+        if (userCount === 2) {
+            console.log(`[${currentRoom}] İki cihaz hazır: WebRTC İletişimi Başlatılıyor.`);
+            
+            // Odadaki soketleri al
+            const socketsInRoom = Array.from(room);
+            const initiatorSocketId = socketsInRoom[0];
+            const receiverSocketId = socketsInRoom[1];
+
+            // 1. Cihaza (Initiator) Offer başlatmasını söyle
+            io.to(initiatorSocketId).emit('startCommunication', { isInitiator: true, roomName: currentRoom });
+            
+            // 2. Cihaza (Receiver) Answer beklemesini söyle
+            io.to(receiverSocketId).emit('startCommunication', { isInitiator: false, roomName: currentRoom });
+        } else if (userCount > 2) {
+            // İkiden fazla kullanıcı varsa, üçüncü kullanıcıya doluluk sinyali gönder
+            socket.emit('roomFull');
+            socket.leave(currentRoom);
+            currentRoom = null;
+            console.log(`[${socket.id}] '${currentRoom}' odası dolu. Ayrıldı.`);
+        } else {
+            // İlk kullanıcı ise beklediğini bildir
+            socket.emit('waitingForPartner');
+        }
     });
 
+    // WebRTC Sinyalleme: Gelen sinyali odadaki diğer kişiye ilet
+    const forwardSignal = (type) => (data) => {
+        if (currentRoom) {
+            // Gönderici haricindeki diğer kişiye gönder
+            socket.to(currentRoom).emit(type, data);
+        }
+    };
+    
+    // WebRTC Sinyalleme olayları
+    socket.on('offer', forwardSignal('offer'));
+    socket.on('answer', forwardSignal('answer'));
+    socket.on('candidate', forwardSignal('candidate'));
 
+    // Kamera açma/kapama sinyali (Sadece diğer cihaza ilet)
+    socket.on('cameraToggle', forwardSignal('cameraToggle'));
+    
+    // Yeni: Kamera çevirme sinyali
+    socket.on('cameraSwitch', forwardSignal('cameraSwitch'));
+
+    // Kullanıcı bağlantısı kesildiğinde
     socket.on('disconnect', () => {
-        console.log(`Kullanıcı ayrıldı: ${socket.id}`);
+        if (currentRoom) {
+            const room = io.sockets.adapter.rooms.get(currentRoom);
+            const userCount = room ? room.size : 0;
+            
+            console.log(`[${socket.id}] '${currentRoom}' odasından ayrıldı. Kalan üye: ${userCount - 1}`);
+            
+            // Odadaki diğer kişiye ortağının ayrıldığını bildir
+            socket.to(currentRoom).emit('partnerDisconnected');
+            
+            // Eğer odada kimse kalmadıysa, odayı temizle
+            if (userCount === 1) {
+                // Bu adım gerekli değildir, socket.io otomatik yapar, log için tutulabilir.
+            }
+        }
+        console.log('Kullanıcı ayrıldı:', socket.id);
     });
 });
 
-http.listen(PORT, () => {
-  console.log(`Sunucu http://localhost:${PORT} adresinde çalışıyor`);
+server.listen(PORT, () => {
+    console.log(`Sunucu http://localhost:${PORT} adresinde çalışıyor`);
 });
